@@ -1,6 +1,27 @@
 import telebot
 import requests
 import os
+import redis
+
+REDIS_URL = os.environ.get('REDIS_URL')
+
+dict_db = {}
+
+def save(key, value):
+    if REDIS_URL:
+        redis_db = redis.from_url(REDIS_URL)
+        redis_db.set(key, value)
+    else:
+        dict_db[key] = value
+
+def load(key):
+    if REDIS_URL:
+        redis_db = redis.from_url(REDIS_URL)
+        return redis_db.get(key)
+    else:
+        return dict_db.get(key)
+
+
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from urllib3 import disable_warnings, exceptions
 disable_warnings(exceptions.InsecureRequestWarning)
@@ -19,11 +40,8 @@ DAY = 'day'
 
 @bot.message_handler(func=lambda message: True)
 def dispatcher(message):
-    print(states)
     user_id = message.from_user.id
     state=states.get(user_id, MAIN)
-    print('current user', user_id, state)
-    print(message.text)
     if state == MAIN:
         main_handler(message)
     elif state == ANSWER:
@@ -33,15 +51,18 @@ def dispatcher(message):
 
 def main_handler(message):
     if message.text == '/start':
+        save(str(message.from_user.id), MAIN)
         bot.send_message(message.from_user.id, 'Это бот-погода. Поможет узнать погоду в любом городе. Какой город интересует?')
         states[message.from_user.id] = ANSWER
 
 def weather_answer(message):
     if message.text == 'Москва':
+        save(str(message.from_user.id), ANSWER)
         res = requests.get(api_url, params={'city': message.text}, verify=False).json()
         bot.send_message(message.from_user.id, 'Сейчас ' + str(res['temp']))
         states[message.from_user.id] = MAIN
     elif message.text == 'Москва завтра':
+        save(str(message.from_user.id), ANSWER)
         markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         markup.add(
             *[KeyboardButton(button) for button in ['сегодня', 'завтра', 'послезавтра', 'послепослезавтра']]
@@ -50,6 +71,7 @@ def weather_answer(message):
         states[message.from_user.id] = DAY
 
     elif message.text == 'Москва 30.05':
+        save(str(message.from_user.id), ANSWER)
         result = re.search("(.+)\s(\d{2}).(\d{2})", message.text)
         groups = result.groups()
         first_digit = groups[0]
@@ -64,23 +86,28 @@ def weather_answer(message):
             bot.send_message(message.from_user.id, second_digit + '.' + third_digit + ' ' + str(res['temp']))
             states[message.from_user.id] = MAIN
     else:
-         bot.reply_to(message, 'Я тебя не понял')
-         states[message.from_user.id] = MAIN
+        save(str(message.from_user.id), ANSWER)
+        bot.reply_to(message, 'Я тебя не понял')
+        states[message.from_user.id] = MAIN
 
 def weather_day(message):
     if message.text == 'сегодня':
+        save(str(message.from_user.id), DAY)
         res = requests.get(api_url, params={'city': 'Москва', 'forecast': 0}, verify=False).json()
         bot.send_message(message.from_user.id, 'Сегодня ' + str(res['temp']))
         states[message.from_user.id] = MAIN
     elif message.text == 'завтра':
+        save(str(message.from_user.id), DAY)
         res = requests.get(api_url, params={'city': 'Москва', 'forecast': 1}, verify=False).json()
         bot.send_message(message.from_user.id, 'Завтра ' + str(res['temp']))
         states[message.from_user.id] = MAIN
     elif message.text == 'послезавтра':
+        save(str(message.from_user.id), DAY)
         res = requests.get(api_url, params={'city': 'Москва', 'forecast': 2}, verify=False).json()
         bot.send_message(message.from_user.id, 'послезавтра ' + str(res['temp']))
         states[message.from_user.id] = MAIN
     elif message.text == 'послепослезавтра':
+        save(str(message.from_user.id), DAY)
         res = requests.get(api_url, params={'city': 'Москва', 'forecast': 3}, verify=False).json()
         bot.send_message(message.from_user.id, 'послепослезавтра ' + str(res['temp']))
         states[message.from_user.id] = MAIN
